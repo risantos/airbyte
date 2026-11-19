@@ -9,7 +9,7 @@ class ConfigBuilder:
     def __init__(self) -> None:
         self._subdomain: Optional[str] = None
         self._start_date: Optional[str] = None
-        self._credentials: Dict[str, str] = {}
+        self._credentials: Dict[str, Any] = {}
         self._ignore_pagination: Optional[bool] = None
 
     def with_subdomain(self, subdomain: str) -> "ConfigBuilder":
@@ -41,6 +41,29 @@ class ConfigBuilder:
         self._credentials["refresh_token"] = refresh_token
         self._credentials["access_token"] = access_token
         self._credentials["token_expiry_date"] = token_expiry_date
+        return self
+
+    def with_oauth_client_credentials(
+        self,
+        client_id: str,
+        client_secret: str,
+        scope: Optional[str] = None,
+        expires_in: Optional[int] = None,
+    ) -> "ConfigBuilder":
+        """Build `oauth2_client_credentials` credentials.
+
+        `scope` and `expires_in` are left out when not given, so a test can cover the
+        manifest defaults (`read` and 172800) as a user who never touched either field sees
+        them. There is no access token or refresh token: this grant returns no refresh token
+        and the connector requests a fresh access token on every sync.
+        """
+        self._credentials["credentials"] = "oauth2_client_credentials"
+        self._credentials["client_id"] = client_id
+        self._credentials["client_secret"] = client_secret
+        if scope is not None:
+            self._credentials["scope"] = scope
+        if expires_in is not None:
+            self._credentials["expires_in"] = expires_in
         return self
 
     def with_start_date(self, start_date: AirbyteDateTime) -> "ConfigBuilder":

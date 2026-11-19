@@ -65,6 +65,26 @@ definitions:
         - credentials
         - refresh_token
 
+  oauth_client_credentials_authenticator:
+    type: OAuthAuthenticator
+    client_id: "{{ config['credentials']['client_id'] }}"
+    client_secret: "{{ config['credentials']['client_secret'] }}"
+    grant_type: client_credentials
+    expires_in_name: expires_in
+    token_refresh_endpoint: "https://{{ config['subdomain'] }}.zendesk.com/oauth/tokens"
+    # `scope` and `expires_in` go through `refresh_request_body`, not through the
+    # OAuthAuthenticator `scopes` field: that field sends a JSON list under the plural key
+    # `scopes`, while Zendesk reads the singular `scope` as a space-separated string. Zendesk
+    # issues a token for a malformed `scope` and only then rejects every API call with 403,
+    # so the mistake surfaces as a broken sync rather than a failed token request.
+    # `or` rather than a `get` default: clearing `scope` in the UI leaves an empty string,
+    # which a two-argument `get` would forward to Zendesk, and an empty `scope` makes Zendesk
+    # grant full read and write access. `expires_in` carries the same guard for symmetry,
+    # though spec validation rejects an empty string for an `integer` field before it is read.
+    refresh_request_body:
+      scope: "{{ config['credentials'].get('scope') or 'read' }}"
+      expires_in: "{{ config['credentials'].get('expires_in') or 172800 }}"
+
   oauth_token_refresh_response_filter:
     type: HttpResponseFilter
     # http_codes and predicate are OR-ed by HttpResponseFilter (not AND-ed), so this filter must
@@ -86,6 +106,7 @@ definitions:
         authenticators:
           oauth2.0: "#/definitions/bearer_authenticator"
           oauth2_refresh: "#/definitions/oauth_refresh_authenticator"
+          oauth2_client_credentials: "#/definitions/oauth_client_credentials_authenticator"
           api_token: "#/definitions/basic_authenticator"
       error_handler:
         type: DefaultErrorHandler
@@ -421,6 +442,7 @@ definitions:
           authenticators:
             oauth2.0: "#/definitions/bearer_authenticator"
             oauth2_refresh: "#/definitions/oauth_refresh_authenticator"
+            oauth2_client_credentials: "#/definitions/oauth_client_credentials_authenticator"
             api_token: "#/definitions/basic_authenticator"
       download_target_extractor:
         type: DpathExtractor
@@ -1651,9 +1673,12 @@ spec:
         title: Authentication
         type: object
         description: >-
-          Zendesk allows three authentication methods. We recommend using `OAuth2.0 with Refresh Token`
-          for Airbyte Cloud users (recommended), `OAuth2.0 (Legacy)` for existing OAuth connections,
-          and `API token` for Airbyte Open Source users.
+          Zendesk allows four authentication methods. `OAuth2.0 with Refresh Token` is
+          recommended on Airbyte Cloud, where Airbyte runs the browser consent flow for you.
+          `OAuth2.0 with Client Credentials` needs no browser consent, so it suits
+          self-managed deployments and unattended setups. `API Token` works only with a token
+          created before Zendesk stopped issuing them, and `OAuth2.0 (Legacy)` is for existing
+          OAuth connections that have not migrated.
         order: 1
         oneOf:
           - title: OAuth2.0 with Refresh Token
@@ -1702,6 +1727,62 @@ spec:
                   rotating refresh tokens - each refresh will return a new refresh token and
                   invalidate the previous one.
                 airbyte_secret: true
+          - title: OAuth2.0 with Client Credentials
+            type: object
+            required:
+              - client_id
+              - client_secret
+            additionalProperties: true
+            properties:
+              credentials:
+                type: string
+                const: oauth2_client_credentials
+                order: 0
+              client_id:
+                type: string
+                title: Client ID
+                description: >-
+                  The OAuth client's ID. The client must be a confidential client; Zendesk
+                  rejects the client credentials grant for public clients. See the <a
+                  href="https://developer.zendesk.com/documentation/authentication/oauth-migration/#client-credentials-grant">Zendesk
+                  client credentials grant documentation</a> for more information.
+                airbyte_secret: true
+                order: 1
+              client_secret:
+                type: string
+                title: Client Secret
+                description: >-
+                  The OAuth client secret. Zendesk shows it only once, when you save the OAuth
+                  client, so store it before you leave the page.
+                airbyte_secret: true
+                order: 2
+              scope:
+                type: string
+                title: Scope
+                default: read
+                description: >-
+                  A space-separated list of Zendesk OAuth scopes to request. The default
+                  `read` covers every resource the connector syncs. Narrow it only if you sync
+                  a subset of streams: a scope that omits a stream's resource makes that
+                  stream fail with `403 Forbidden`. The scopes must fall within the OAuth
+                  client's allowed scopes, otherwise Zendesk rejects the token request with
+                  `invalid_scope`.
+                examples:
+                  - read
+                  - "tickets:read users:read organizations:read"
+                order: 3
+              expires_in:
+                type: integer
+                title: Access Token Lifetime (seconds)
+                default: 172800
+                minimum: 300
+                maximum: 172800
+                description: >-
+                  How long each access token Zendesk issues stays valid. This grant returns no
+                  refresh token, so the connector requests a new token per sync and never
+                  stores one; the lifetime only has to outlast a single sync. Zendesk accepts
+                  300 to 172800 seconds (48 hours).
+                order: 4
           - title: API Token
             type: object
             required:

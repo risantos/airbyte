@@ -15,9 +15,10 @@ This page contains the setup guide and reference information for the [Zendesk Su
 
 ### Set up Zendesk Support
 
-The Zendesk Support source connector supports three authentication methods:
+The Zendesk Support source connector supports four authentication methods:
 
 - OAuth 2.0 with refresh token (recommended)
+- OAuth 2.0 with client credentials (no browser authorization step, for self-managed and unattended setups)
 - API token (Zendesk disables new API token creation on October 27, 2026, see the following caution)
 - OAuth 2.0 Legacy (for existing OAuth connections that haven't migrated to the refresh token flow)
 
@@ -74,6 +75,20 @@ When you configure the source, select **OAuth2.0 with Refresh Token** and enter 
 :::caution
 Zendesk refresh tokens are single-use. Every refresh returns a new refresh token and invalidates the previous one, so a refresh token can only be used by one source. Don't copy the same value into a second source or a second Airbyte deployment.
 :::
+
+### Generate OAuth client credentials
+
+The [client credentials grant](https://developer.zendesk.com/documentation/authentication/oauth-migration/#client-credentials-grant) needs no browser authorization step, so it suits unattended setups and deployments where nobody can complete a consent flow. The connector requests an access token directly from the client ID and secret, and repeats that request whenever it needs a new token. There is no refresh token to store or rotate.
+
+1. Register an OAuth client in Admin Center. See [Registering your application with Zendesk](https://support.zendesk.com/hc/en-us/articles/4408845965210). Note the client's unique identifier and secret. Redirect URLs aren't needed for this flow.
+2. Use a confidential client, meaning one that authenticates with a secret. Zendesk rejects the client credentials grant for public clients, which use PKCE instead of a secret.
+3. Leave the client's allowed scopes blank, or make sure they include every scope you intend to request.
+
+When you configure the source, select **OAuth2.0 with Client Credentials** and enter the client ID and client secret.
+
+:::caution
+Zendesk attributes every action taken with a client credentials token to the user who created the OAuth client, which affects audit logs and permission checks. Create the client under a dedicated service account if attribution matters to you.
+:::
 <!-- /env:oss -->
 
 ### Set up the Zendesk Support connector in Airbyte
@@ -102,7 +117,8 @@ Zendesk refresh tokens are single-use. Every refresh returns a new refresh token
 - **For Airbyte Cloud**: To authenticate using OAuth, select **OAuth 2.0 with Refresh Token** from the Authentication dropdown, then click **Authenticate your Zendesk Support account** to sign in with Zendesk Support and authorize your account.
   <!-- /env:cloud -->
   <!-- env:oss -->
-- **For Airbyte Open Source**: To authenticate using OAuth, select **OAuth2.0 with Refresh Token** from the Authentication dropdown and enter the client ID, client secret, and refresh token you generated. To authenticate with an existing API token instead, select **API Token** and enter the token, as well as the email address associated with your Zendesk Support account. API tokens stop working on April 30, 2027.
+- **For Airbyte Open Source**: To authenticate using OAuth, select **OAuth2.0 with Refresh Token** from the Authentication dropdown and enter the client ID, client secret, and refresh token you generated. To authenticate without a browser authorization step, select **OAuth2.0 with Client Credentials** and enter the client ID and client secret of a confidential OAuth client. To authenticate with an existing API token instead, select **API Token** and enter the token, as well as the email address associated with your Zendesk Support account. API tokens stop working on April 30, 2027.
+  - With **OAuth2.0 with Client Credentials**, two optional fields control the token the connector requests. **Scope** is a space-separated list of Zendesk OAuth scopes and defaults to `read`, which covers every resource the connector syncs; narrowing it makes any stream outside the scope fail with `403 Forbidden`. **Access Token Lifetime (seconds)** defaults to `172800` (48 hours, Zendesk's maximum) and only has to outlast a single sync, because the connector never stores the token.
 <!-- /env:oss -->
 
 6. For **Subdomain**, enter your Zendesk subdomain. This is the subdomain found in your account URL. For example, if your account URL is `https://MY_SUBDOMAIN.zendesk.com/`, then `MY_SUBDOMAIN` is your subdomain.
@@ -309,6 +325,7 @@ If you use Airbyte Cloud and your organization restricts access to specific IPs,
 
 | Version     | Date       | Pull Request                                             | Subject                                                                                                                                                                                                                            |
 |:------------|:-----------|:---------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 5.8.0 | 2026-11-19 | [TBD](https://github.com/airbytehq/airbyte/pull/TBD) | Add `OAuth2.0 with Client Credentials` authentication, which obtains an access token from a confidential OAuth client's ID and secret with no browser authorization step. Existing authentication methods are unchanged |
 | 5.7.0 | 2026-10-20 | [89571](https://github.com/airbytehq/airbyte/pull/89571) | Add the `ticket_audits_per_ticket` stream, which reads audits ticket by ticket so archived tickets are included. It makes one request per created or updated ticket and isn't selected by default; connections that propagate new streams automatically start syncing it. `ticket_audits` is unchanged |
 | 5.6.3 | 2026-10-13 | [87513](https://github.com/airbytehq/airbyte/pull/87513) | Refresh the OAuth access token and retry when Zendesk rejects it with `401 invalid_token`, so OAuth connections no longer intermittently fail on `ticket_metrics` and other streams during token rotation |
 | 5.6.2 | 2026-10-13 | [88867](https://github.com/airbytehq/airbyte/pull/88867) | Update dependencies |
