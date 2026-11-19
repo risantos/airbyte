@@ -54,6 +54,7 @@ Because `object_records`, `object_type_policies`, and `relationship_records` mak
 - A start date for incremental syncs, in the format `YYYY-MM-DDT00:00:00Z`.
 - One of the following authentication methods:
   - **OAuth2.0** (recommended for Airbyte Cloud): Client ID, Client Secret, and authorization through Airbyte's OAuth flow.
+  - **OAuth2.0 with Client Credentials**: Client ID and Client Secret of a confidential OAuth client, with no browser authorization step.
   - **API Token** (recommended for Airbyte Open Source): Your Zendesk email address and an API token.
   - **OAuth2.0 (Legacy)**: A manually generated OAuth access token.
 
@@ -61,7 +62,7 @@ Because `object_records`, `object_type_policies`, and `relationship_records` mak
 
 ### Authentication
 
-This connector supports three authentication methods:
+This connector supports four authentication methods:
 
 #### OAuth2.0 (recommended for Airbyte Cloud)
 
@@ -70,6 +71,19 @@ When you set up the connector in Airbyte Cloud, you'll be redirected to Zendesk 
 Zendesk uses rotating refresh tokens, meaning each time the connector refreshes its access token, it receives a new refresh token and the previous one is invalidated. The connector handles this automatically. Airbyte requests access tokens with a 48-hour lifetime and refreshes them only after they expire.
 
 If a sync fails because the refresh token is invalid, re-authenticate the source in Airbyte to get a new token pair.
+
+#### OAuth2.0 with Client Credentials
+
+The [client credentials grant](https://developer.zendesk.com/documentation/authentication/oauth-migration/#client-credentials-grant) needs no browser authorization step, so it suits unattended setups and deployments where nobody can complete a consent flow. The connector requests an access token directly from the client ID and secret, and repeats that request whenever it needs a new token. There is no refresh token to store or rotate.
+
+1. In Zendesk, go to **Admin Center** > **Apps and integrations** > **APIs** > **OAuth clients**, and register a client. Redirect URLs aren't needed for this flow.
+2. Use a confidential client, meaning one that authenticates with a secret. Zendesk rejects the client credentials grant for public clients, which use PKCE instead of a secret.
+3. Copy the client's unique identifier and secret. Zendesk only displays the secret once.
+4. In Airbyte, enter the client ID and client secret.
+
+Two optional fields control the token the connector requests. **Scope** is a space-separated list of Zendesk OAuth scopes and defaults to `read`, which covers every resource the connector syncs; narrowing it makes any stream outside the scope fail with `403 Forbidden`. **Access Token Lifetime (seconds)** defaults to `172800` (48 hours, Zendesk's maximum) and only has to outlast a single sync, because the connector never stores the token.
+
+Zendesk attributes every action taken with a client credentials token to the user who created the OAuth client, which affects audit logs and permission checks. Create the client under a dedicated service account if attribution matters to you.
 
 #### API Token (recommended for Airbyte Open Source)
 
@@ -100,6 +114,7 @@ If you use Airbyte Cloud and your organization restricts access to specific IPs,
 
 | Version | Date       | Pull Request                                             | Subject                                                                         |
 | :------ | :--------- | :------------------------------------------------------- | :------------------------------------------------------------------------------ |
+| 0.5.0 | 2026-11-19 | [TBD](https://github.com/airbytehq/airbyte/pull/TBD) | Add `OAuth2.0 with Client Credentials` authentication, which obtains an access token from a confidential OAuth client's ID and secret with no browser authorization step. Existing authentication methods are unchanged |
 | 0.4.29 | 2026-11-10 | [91770](https://github.com/airbytehq/airbyte/pull/91770) | Update dependencies |
 | 0.4.28 | 2026-11-03 | [90826](https://github.com/airbytehq/airbyte/pull/90826) | Update dependencies |
 | 0.4.27 | 2026-10-27 | [90080](https://github.com/airbytehq/airbyte/pull/90080) | Update dependencies |
