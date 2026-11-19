@@ -6,6 +6,7 @@
 - Your Zendesk subdomain (for example, if your Zendesk URL is `https://mycompany.zendesk.com`, the subdomain is `mycompany`)
 - One of the following authentication methods:
   - **OAuth 2.0** (recommended): A Zendesk OAuth client with a client ID, client secret, and refresh token
+  - **OAuth 2.0 with Client Credentials**: A confidential Zendesk OAuth client with a client ID and client secret, and no browser authorization step
   - **API Token**: A Zendesk API token and the email address associated with the token. Zendesk disables new API token creation on October 27, 2026.
 
 ## Setup guide
@@ -26,9 +27,17 @@ Generate an API token in your Zendesk Admin Center under **Apps and integrations
 
 Register an OAuth client in your Zendesk Admin Center under **Apps and integrations > APIs > OAuth Clients**. For details, see [Using OAuth authentication with your application](https://support.zendesk.com/hc/en-us/articles/4408845965210-Using-OAuth-authentication-with-your-application) in the Zendesk documentation. Zendesk uses rotating refresh tokens, so each token refresh returns a new refresh token and invalidates the previous one.
 
+#### OAuth 2.0 with Client Credentials
+
+The [client credentials grant](https://developer.zendesk.com/documentation/authentication/oauth-migration/#client-credentials-grant) needs no browser authorization step, so it suits unattended setups and deployments where nobody can complete a consent flow. The connector requests an access token directly from the client ID and secret, and repeats that request whenever it needs a new token. There is no refresh token to store or rotate.
+
+Register an OAuth client as described under **OAuth 2.0**, then note two differences. The client must be confidential, meaning it authenticates with a secret; Zendesk rejects this grant for public clients, which use PKCE instead. Redirect URLs aren't needed. Zendesk attributes every action taken with a client credentials token to the user who created the OAuth client, so create the client under a dedicated service account if attribution matters to you.
+
+Two optional fields control the token the connector requests. **Scope** is a space-separated list of Zendesk OAuth scopes and defaults to `read`, which covers every resource the connector syncs; narrowing it makes any stream outside the scope fail with `403 Forbidden`. **Access Token Lifetime (seconds)** defaults to `172800` (48 hours, Zendesk's maximum) and only has to outlast a single sync, because the connector never stores the token.
+
 ### OAuth token lifetimes
 
-For the OAuth 2.0 refresh-token flow, the connector requests access tokens with `expires_in=172800` (2 days), both during authorization and when refreshing a token. Zendesk's [grant-type token API](https://developer.zendesk.com/api-reference/ticketing/oauth/grant_type_tokens/) supports refresh-token lifetimes from 7 to 90 days, with a default of 30 days. The connector does not set `refresh_token_expires_in`, so it uses that default when requesting tokens.
+This section covers the refresh-token flow only; see **OAuth 2.0 with Client Credentials** for that grant's lifetime. For the OAuth 2.0 refresh-token flow, the connector requests access tokens with `expires_in=172800` (2 days), both during authorization and when refreshing a token. Zendesk's [grant-type token API](https://developer.zendesk.com/api-reference/ticketing/oauth/grant_type_tokens/) supports refresh-token lifetimes from 7 to 90 days, with a default of 30 days. The connector does not set `refresh_token_expires_in`, so it uses that default when requesting tokens.
 
 Each refresh invalidates the previous access token and refresh token. If your refresh token expires, obtain new OAuth credentials before resuming syncs.
 
@@ -117,6 +126,7 @@ If you use Airbyte Cloud and your organization restricts access to specific IPs,
 
 | Version | Date | Pull Request | Subject |
 |:--|:--|:--|:--|
+| 2.1.0 | 2026-11-19 | [TBD](https://github.com/airbytehq/airbyte/pull/TBD) | Add `OAuth2.0 with Client Credentials` authentication, which obtains an access token from a confidential OAuth client's ID and secret with no browser authorization step. Existing authentication methods are unchanged |
 | 2.0.36 | 2026-11-10 | [91795](https://github.com/airbytehq/airbyte/pull/91795) | Update dependencies |
 | 2.0.35 | 2026-11-03 | [90906](https://github.com/airbytehq/airbyte/pull/90906) | Simplify rate-limit and retry error handling configuration with no change in behavior |
 | 2.0.34 | 2026-11-03 | [90809](https://github.com/airbytehq/airbyte/pull/90809) | Update dependencies |
